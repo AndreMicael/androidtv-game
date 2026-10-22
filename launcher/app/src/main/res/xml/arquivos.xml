@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- root-path: as ROMs ficam em Android/media deste app e em /storage/XXXX-XXXX (pendrive). -->
+<paths>
+    <root-path name="raiz" path="/" />
+</paths>

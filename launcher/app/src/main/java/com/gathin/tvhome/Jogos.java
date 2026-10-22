@@ -30,7 +30,9 @@ final class Jogos {
         // A cor vem do próprio console: o roxo dos botões do Super Nintendo, o dourado do Neo Geo, o azul do PlayStation.
         SNES("Super Nintendo", "SNES", "libsnes9x.so", 0xFF8E7CF0, new String[]{".sfc", ".smc", ".zip"}),
         FLIPERAMA("Fliperama", "Fliperama", "libfbneo.so", 0xFFF2B531, new String[]{".zip"}),
-        PS1("PlayStation", "PS1", "libpcsx_rearmed.so", 0xFF4F86F7, new String[]{".chd", ".pbp", ".cue", ".ccd", ".m3u", ".iso", ".bin", ".img"});
+        PS1("PlayStation", "PS1", "libpcsx_rearmed.so", 0xFF4F86F7, new String[]{".chd", ".pbp", ".cue", ".ccd", ".m3u", ".iso", ".bin", ".img"}),
+        // Sem núcleo no APK: abre no app PPSSPP (Jogos.PPSSPP), que roda PSP bem melhor nesta TV.
+        PSP("PlayStation Portable", "PSP", null, 0xFF8A8F98, new String[]{".iso", ".cso", ".chd", ".pbp"});
 
         final String nome, pasta, nucleo;
         final int cor;
@@ -337,9 +339,24 @@ final class Jogos {
         return dot > 0 ? n.substring(0, dot) : n;
     }
 
-    /** Abre o jogo neste APK, pelo núcleo empacotado. */
+    static final String PPSSPP = "org.ppsspp.ppsspp";
+
+    /** Abre o jogo neste APK, pelo núcleo empacotado; PSP vai para o app PPSSPP. */
     static boolean jogar(Context c, Jogo j) {
         if (!j.rom.isFile()) return false;
+        if (j.sistema.nucleo == null) {
+            // O PPSSPP não lê as pastas deste app nem o pendrive: o arquivo vai por content:// com permissão de leitura.
+            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(c, c.getPackageName() + ".arquivos", j.rom);
+            Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/octet-stream")
+                    .setClassName(PPSSPP, PPSSPP + ".PpssppActivity")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                c.startActivity(i);
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
         Intent i = new Intent(c, EmuladorActivity.class);
         i.putExtra(EmuladorActivity.EXTRA_ROM, j.rom.getAbsolutePath());
         i.putExtra(EmuladorActivity.EXTRA_CORE, j.sistema.nucleo);

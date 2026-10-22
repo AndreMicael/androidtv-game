@@ -20,10 +20,12 @@ Launcher para Android TV com aba de **jogos retrô** embutida (Super Nintendo, f
 - No player: cima/baixo ou Canal+/Canal− trocam de canal, OK mostra o nome, Voltar sai.
 
 ### Jogos
-- Uma prateleira por console (Super Nintendo, Fliperama, PlayStation), cada jogo com a cor do console e a capa ao fundo, mais a fileira **Continuar jogando**.
+- Uma prateleira por console (Super Nintendo, Fliperama, PlayStation, PlayStation Portable), cada jogo com a cor do console e a capa ao fundo, mais a fileira **Continuar jogando**.
 - Lê qualquer ROM das pastas da TV e de uma pasta `Jogos/` no pendrive; nome, ano, jogadores e capa vêm do `jogos.json` (opcional).
 - Mostra o espaço livre na TV e no pendrive, e o botão **Atualizar** relê as pastas.
 - **Segurar OK num jogo**: mover entre a TV e o pendrive (ROM, faixas do `.cue`, capa e linha do JSON vão juntos; um carregando discreto aparece no canto) ou apagar, com confirmação.
+
+- **PSP**: os jogos ficam em `Jogos/PSP` (`.iso`, `.cso`, `.chd`, `.pbp`) e abrem no app [PPSSPP](https://www.ppsspp.org), que precisa estar instalado. Na primeira vez, escolha no PPSSPP "Usar os Dados Privados do App" para os saves funcionarem.
 
 ### Emulador (dentro do APK)
 - LibretroDroid com os núcleos snes9x, FBNeo e PCSX ReARMed: não precisa do RetroArch.
@@ -87,6 +89,7 @@ Android/media/com.gathin.tvhome/Jogos/
   SNES/        .sfc .smc .zip
   Fliperama/   .zip com o nome oficial do MAME/FBNeo (kof97.zip...), mais o neogeo.zip
   PS1/         .chd .pbp .cue+.bin .iso
+  PSP/         .iso .cso .chd (abre no app PPSSPP)
   capas/       imagens das capas
   jogos.json   opcional
 ```
