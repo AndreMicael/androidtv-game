@@ -1,7 +1,6 @@
 package com.gathin.tvhome;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -18,13 +17,13 @@ import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
-import android.net.NetworkRequest;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -33,10 +32,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.text.SpannableString;
-import android.text.Spanned;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -63,7 +58,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -75,6 +69,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
     static int COLUMNS = 4;
+    /** Dark colours only: light backgrounds would wash out the white type and the glass. */
+    private static final int[] LOOK_COLORS = {0xFF000000, 0xFF16181E, 0xFF102033, 0xFF122018, 0xFF241418};
+    private static final int[] LOOK_NAMES = {
+            R.string.look_black, R.string.look_graphite, R.string.look_navy, R.string.look_forest, R.string.look_wine
+    };
     private static final long MINUTE_MS = 60_000L;
     private String liveTvPkg;
     private String liveTvAction;
@@ -93,9 +92,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView greeting;
     private View btnInputs;
     private TextView btnWifi;
-    private TextView shamsiDate;
-    private boolean shamsi;
-    private String vpnApp;
     private SpringAnimation springX, springY;
     private float glassTargetX, glassTargetY;
     // How far the grid has scrolled the glass. springY works without it, in grid content space, so a
@@ -108,18 +104,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** App of the last focused tile, so focus follows it when the app list changes. */
     private static String lastFocusedKey;
     private float density;
-    /** Module cards (res/values/config.xml, module_cards): discovered on resume, shown only after the owner's Show. */
-    private boolean moduleCards;
+    private Clima clima;
+    private long climaEm;
     /** Calmer motion for weak GPUs (config.xml, reduced_motion): stiff spring, short fades, no replay. */
     private boolean reducedMotion;
-    /** hidden_apps as the adapter sees them (config.xml or a theme's config.json): a hidden app gets no card either. */
-    private Set<String> hiddenApps = Collections.emptySet();
-    private List<Cards.Card> cards = Collections.emptyList();
-    /** The grid has been laid out and focused since the last resume; the card prompt waits for this. */
-    private boolean tilesReady;
-    private Dialog cardPrompt;
-    /** Set when a decision could not be saved: no more prompts until the next resume, instead of asking in a loop. */
-    private boolean promptsPaused;
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
 
@@ -148,18 +136,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             updateInputsButton();
         }
     };
-    /** Listens for any VPN coming up or going down, even one this app's traffic is excluded from. */
-    private final ConnectivityManager.NetworkCallback vpnCallback = new ConnectivityManager.NetworkCallback() {
-        @Override
-        public void onAvailable(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
-        }
-
-        @Override
-        public void onLost(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
-        }
-    };
     private final IntentFilter packageFilter = new IntentFilter();
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override
@@ -180,6 +156,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     };
 
     @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(Config.portuguese(base));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
@@ -194,6 +175,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sourcePanelService = cfg.sourcePanelService;
         sourcePanelAction = cfg.sourcePanelAction;
 
+        clima = new Clima(this);
         root = findViewById(R.id.root);
         root.setBackgroundColor(cfg.backgroundColor);
         if (cfg.wallpaper != null) showWallpaper(cfg.wallpaper);
@@ -202,17 +184,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroName = findViewById(R.id.heroName);
         greeting = findViewById(R.id.greeting);
         btnWifi = findViewById(R.id.btnWifi);
-        shamsiDate = findViewById(R.id.shamsiDate);
-        shamsi = cfg.shamsiDate;
-        if (shamsi) {
-            shamsiDate.setVisibility(View.VISIBLE);
-            TextView date = findViewById(R.id.date);
-            date.setTextSize(11f);
-            date.setPadding(0, (int) (4 * density), 0, 0);
-        }
-        vpnApp = cfg.vpnApp;
-        moduleCards = cfg.moduleCards;
-        hiddenApps = new HashSet<>(cfg.hiddenApps);
 
         grid = findViewById(R.id.grid);
         grid.setLayoutManager(new GridLayoutManager(this, COLUMNS));
@@ -278,19 +249,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
 
         btnInputs = findViewById(R.id.btnInputs);
+        View btnGames = findViewById(R.id.btnGames);
         View btnSettings = findViewById(R.id.btnSettings);
+        // Tarefa própria: o Home não destrói um jogo aberto (ver onNewIntent). CLEAR_TASK: sempre abre na lista.
+        btnGames.setOnClickListener(v -> startActivity(new Intent(this, JogosActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)));
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> openNetworkPill());
         btnWifi.setOnLongClickListener(v -> {
             open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
             return true;
         });
-        btnSettings.setOnClickListener(v -> open(systemIntent(Settings.ACTION_SETTINGS)));
-        btnSettings.setOnLongClickListener(v -> {
-            if (!moduleCards) return false;   // off: a long press does nothing, as before the feature
-            showModuleCards();
-            return true;
-        });
+        btnSettings.setOnClickListener(v -> showSettingsMenu());
 
         // Keep focus on the top bar at its ends and at the top: Android's focus finder would otherwise
         // jump to a tile far below when there is nothing in that direction.
@@ -303,12 +273,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                // The left end is Inputs, or Wi-Fi on a box without inputs.
-                return v.getId() == R.id.btnInputs
-                        || (v.getId() == R.id.btnWifi && btnInputs.getVisibility() != View.VISIBLE);
+                // The left end is Games.
+                return v.getId() == R.id.btnGames;
             }
             return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == R.id.btnSettings;
         };
+        btnGames.setOnKeyListener(pillKeys);
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
@@ -329,10 +299,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (tim != null) tim.registerCallback(inputCallback, handler);
         if (cm != null) {
             cm.registerDefaultNetworkCallback(networkCallback);
-            cm.registerNetworkCallback(new NetworkRequest.Builder()
-                    .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
-                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                    .build(), vpnCallback);
         }
     }
 
@@ -371,6 +337,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        // Home apertado no meio de um jogo (o Home do controle é o do sistema, o emulador não consegue segurar):
+        // devolve o jogo já perguntando se quer salvar e sair.
+        if (EmuladorActivity.acabouDeSair()) {
+            startActivity(new Intent(this, EmuladorActivity.class).putExtra(EmuladorActivity.EXTRA_SAIR, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+            return;
+        }
         grid.scrollToPosition(0);
         lastFocused = 0;
         lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(0) : null;
@@ -384,16 +357,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             registerReceiver(packageReceiver, packageFilter);
         }
-        tilesReady = false;
-        promptsPaused = false;
         reloadApps(true);
         updateGreeting();
+        atualizarClima();
         updateWifiLabel();
         updateInputsButton();
         handler.postDelayed(minuteTick, MINUTE_MS);
     }
 
-    /** Rebuilds the tiles (and the module cards), then puts focus back where it was. */
+    /** Rebuilds the tiles, then puts focus back where it was. */
     private void reloadApps(boolean animate) {
         // Capture the app before rebinding can move focus and overwrite its key.
         final String returnKey = lastFocusedKey;
@@ -418,24 +390,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             lastFocused = Math.max(0, Math.min(pos >= 0 ? pos : returnSlot, adapter.getItemCount() - 1));
             lastFocusedKey = adapter.keyAt(lastFocused);
             if (pos < 0) hideHero();
-            // A newly installed app may have brought a card with it.
-            tilesReady = true;
-            showCardPrompt();
         }
     }
 
-    /**
-     * Rebuilds the tiles; the module cards the owner chose to show stand in for their app's tile.
-     * Every step into the card code runs under CardFeature: if it fails, the tiles are the ordinary
-     * ones and cards stay off for this process.
-     */
     private void reloadTiles() {
         // Read these before reload(): rebinding can move focus to the first tile and overwrite them.
         final String returnKey = lastFocusedKey;
         final int returnSlot = lastFocused;
-        final List<Cards.Card> none = Collections.emptyList();
-        cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps, Cards.load(Cards.storeFile(this))), none) : none;
-        adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none));
+        adapter.reload();
         lastFocusedKey = returnKey;
         lastFocused = returnSlot;
     }
@@ -450,8 +412,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.post(() -> {
             int pos = adapter.positionOf(returnKey);
             focusTile(pos >= 0 ? pos : returnSlot);
-            tilesReady = true;
-            showCardPrompt();
         });
     }
 
@@ -460,15 +420,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onPause();
         unregisterReceiver(packageReceiver);
         handler.removeCallbacks(minuteTick);
-        // Nothing of ours stays on screen over another app; an undecided prompt simply returns next time.
-        if (cardPrompt != null) cardPrompt.dismiss();
+        // Nothing of ours stays on screen over another app.
         if (openPopup != null) openPopup.dismiss();
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) showCardPrompt();
     }
 
     @Override
@@ -477,10 +430,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.unregisterCallback(inputCallback);
-        if (cm != null) {
-            cm.unregisterNetworkCallback(networkCallback);
-            cm.unregisterNetworkCallback(vpnCallback);
-        }
+        if (cm != null) cm.unregisterNetworkCallback(networkCallback);
     }
 
     @Override
@@ -698,26 +648,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         else if (hour < 17) res = R.string.good_afternoon;
         else if (hour < 22) res = R.string.good_evening;
         else res = R.string.good_night;
-        greeting.setText(res);
-        if (shamsi) shamsiDate.setText(Shamsi.today());
+        String hello = getString(res);
+        if (clima != null && clima.temDados()) hello = hello + "    " + clima.temperatura + "°  " + Clima.CIDADE;
+        greeting.setText(hello);
     }
 
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
     private void updateWifiLabel() {
         String text = getString(R.string.wifi);
-        boolean vpn = false, online = false;
+        boolean online = false;
         int icon = R.drawable.ic_wifi;
         try {
             ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
             boolean wifi = false, ethernet = false;
-            // All networks, not just the active one: with a VPN up the active network is the VPN itself.
+            // All networks, not just the active one.
             for (Network net : cm != null ? cm.getAllNetworks() : new Network[0]) {
                 NetworkCapabilities caps = cm.getNetworkCapabilities(net);
                 if (caps == null) continue;
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                    vpn = true;
-                    continue;
-                }
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
                 if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
                 online = true;
                 if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) ethernet = true;
@@ -725,7 +673,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             if (!online) {
                 text = getString(R.string.offline);
-                vpn = false;
             } else if (ethernet) {
                 text = getString(R.string.ethernet);
                 icon = R.drawable.ic_ethernet;
@@ -740,35 +687,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         } catch (Exception ignored) {
         }
-        // With a VPN app configured, a VPN that is down matters too: show a red "VPN off" capsule then.
-        boolean vpnDown = !vpn && online && !vpnApp.isEmpty();
-        if (vpn || vpnDown) {
-            // Network name, then the green lock-and-VPN (or red "VPN off") capsule drawn in place of the word.
-            String badge = getString(vpn ? R.string.vpn : R.string.vpn_off);
-            VpnBadge span = new VpnBadge(vpn ? getDrawable(R.drawable.ic_lock) : null, density);
-            // The pill has a maximum width and ellipsizes at the end, which would cut the badge off after
-            // a long network name, so shorten the name to whatever room the badge leaves. The total paddings
-            // include the Wi-Fi icon.
-            TextPaint paint = btnWifi.getPaint();
-            float room = btnWifi.getMaxWidth() - btnWifi.getTotalPaddingStart() - btnWifi.getTotalPaddingEnd()
-                    - span.getSize(paint, badge, 0, badge.length(), null) - paint.measureText(" ") - 2 * density;
-            text = TextUtils.ellipsize(text, paint, Math.max(0, room), TextUtils.TruncateAt.END).toString();
-            SpannableString label = new SpannableString(text + " " + badge);
-            label.setSpan(span, text.length() + 1, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            btnWifi.setText(label);
-        } else {
-            btnWifi.setText(text);
-        }
+        btnWifi.setText(text);
         btnWifi.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
     }
 
-    /** The network pill opens the VPN app when one is configured and installed, otherwise Wi-Fi settings. */
     private void openNetworkPill() {
-        Intent i = vpnApp.isEmpty() ? null : getPackageManager().getLeanbackLaunchIntentForPackage(vpnApp);
-        if (i == null && !vpnApp.isEmpty()) i = getPackageManager().getLaunchIntentForPackage(vpnApp);
-        open(i != null ? i : systemIntent(Settings.ACTION_WIFI_SETTINGS));
+        open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
     }
-
 
     /**
      * China-market MIUI TV firmware answers no standard Settings intents at all; open Xiaomi's own
@@ -989,170 +914,136 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         rows.addView(row);
     }
 
-    // ---- module cards ----------------------------------------------------------------------------
-
-    /**
-     * Asks about the next card that has no decision for its current signing key. One prompt at a
-     * time, only over a laid out grid with window focus (not under a popup or another app), and
-     * the next one follows as soon as this one is answered. Nothing is shown until the owner says Show.
-     */
-    private void showCardPrompt() {
-        if (!moduleCards || !tilesReady || promptsPaused || cardPrompt != null || !hasWindowFocus() || isFinishing()) return;
-        if (cards.isEmpty() || !CardFeature.working()) return;
-        CardFeature.run(() -> {
-            showCardPromptNow();
-            return null;
-        }, null);
+    private void atualizarClima() {
+        if (clima == null || System.currentTimeMillis() - climaEm < 30 * 60_000L) return;
+        new Thread(() -> {
+            if (clima.atualizar()) {
+                climaEm = System.currentTimeMillis();
+                runOnUiThread(this::updateGreeting);
+            }
+        }).start();
     }
 
-    private void showCardPromptNow() {
-        final Cards.Card card = Cards.firstPending(cards);
-        if (card == null) return;
-
-        View panel = getLayoutInflater().inflate(R.layout.dialog_card_prompt, root, false);
-        ((TextView) panel.findViewById(R.id.title)).setText(getString(R.string.card_prompt_title, card.appLabel));
-        ((TextView) panel.findViewById(R.id.body)).setText(card.state == Cards.State.RESIGNED
-                ? getString(R.string.card_prompt_resigned, card.appLabel)
-                : card.state == Cards.State.RELABELLED
-                ? getString(R.string.card_prompt_relabelled, card.appLabel)
-                : getString(R.string.card_prompt_body, card.appLabel));
-        TextView names = panel.findViewById(R.id.names);
-        if (Cards.fold(card.label).equals(Cards.fold(card.appLabel))) names.setVisibility(View.GONE);
-        else names.setText(getString(R.string.card_prompt_names, card.label, card.appLabel));
-        ((TextView) panel.findViewById(R.id.identity)).setText(
-                getString(R.string.card_prompt_identity, card.pkg, Cards.shortDigest(card.digest)));
-        TextView keep = panel.findViewById(R.id.btnKeep);
-        TextView show = panel.findViewById(R.id.btnShow);
-
-        final Dialog dialog = new Dialog(this);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setContentView(panel);
-        dialog.setCanceledOnTouchOutside(false);
-        Window w = dialog.getWindow();
-        if (w != null) {
-            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            w.setLayout((int) (440 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
-            w.setDimAmount(0.6f);
-        }
-        // One decision per prompt: the buttons and Back (cancel) all end here.
-        final boolean[] decided = {false};
-        View.OnClickListener choose = v -> {
-            if (decided[0]) return;
-            decided[0] = true;
-            cardPrompt = null;
-            dialog.dismiss();
-            decideCard(card, v.getId() == R.id.btnShow);   // guards its own card calls; the tile reload stays outside
-            restoreFocus();   // the tiles changed under the prompt; this also chains the next prompt
-        };
-        keep.setOnClickListener(choose);
-        show.setOnClickListener(choose);
-        dialog.setOnCancelListener(d -> choose.onClick(keep));
-        dialog.setOnDismissListener(d -> {
-            if (cardPrompt == dialog) cardPrompt = null;
-        });
-        // Left and Right move between the two buttons; Up and Down stay put; the ends don't wrap.
-        View.OnKeyListener keys = (v, keyCode, event) -> {
-            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return true;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == R.id.btnKeep;
-            return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == R.id.btnShow;
-        };
-        keep.setOnKeyListener(keys);
-        show.setOnKeyListener(keys);
-        cardPrompt = dialog;
-        dialog.show();
-        keep.requestFocus();
+    private void liberarMemoria() {
+        Toast.makeText(this, R.string.freeing_memory, Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            long[] r = Memoria.liberar(this);
+            runOnUiThread(() -> Toast.makeText(this, getString(R.string.memory_freed, r[1]), Toast.LENGTH_LONG).show());
+        }).start();
     }
 
-    /** Writes the owner's decision and rebuilds the tiles; focus is left where it is. */
-    private void decideCard(Cards.Card card, boolean show) {
-        boolean saved = CardFeature.run(() -> Cards.decide(Cards.storeFile(this), card, show), false);
-        if (!saved) {
-            Toast.makeText(this, R.string.card_not_saved, Toast.LENGTH_SHORT).show();
-            promptsPaused = true;
-        }
-        reloadTiles();
-    }
-
-    /** Dropdown under the Settings pill (hold OK): every discovered card, its package and key; OK toggles Shown and Hidden. */
-    private void showModuleCards() {
-        if (cards.isEmpty() || !CardFeature.working()) {
-            Toast.makeText(this, R.string.no_module_cards, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        CardFeature.run(() -> {
-            showModuleCardsNow();
-            return null;
-        }, null);
-    }
-
-    private void showModuleCardsNow() {
+    /** The Settings pill keeps its place. OK opens this menu; hold OK is still the module-card list. */
+    private void showSettingsMenu() {
         View anchor = findViewById(R.id.btnSettings);
-        View panel = getLayoutInflater().inflate(R.layout.popup_cards, root, false);
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
-        final PopupWindow popup = glassPopup(panel, (int) (400 * density));
-        List<Cards.Card> listed = new ArrayList<>(cards);
-        Collections.sort(listed, Cards::byLabel);
-        for (Cards.Card card : listed) {
-            View row = getLayoutInflater().inflate(R.layout.item_card_row, rows, false);
-            row.setTag(card.pkg);
-            ((TextView) row.findViewById(R.id.title)).setText(card.label);
-            TextView app = row.findViewById(R.id.app);
-            if (Cards.fold(card.label).equals(Cards.fold(card.appLabel))) app.setVisibility(View.GONE);
-            else app.setText(getString(R.string.card_app_name, card.appLabel));
-            ((TextView) row.findViewById(R.id.pkg)).setText(card.pkg);
-            ((TextView) row.findViewById(R.id.digest)).setText(Cards.longDigest(card.digest));
-            final String pkg = card.pkg;
-            row.setOnClickListener(v -> CardFeature.run(() -> {
-                // The list stays open; the decision is for the card as it is now, not as it was listed.
-                Cards.Card now = cardFor(pkg);
-                if (now == null) return null;
-                decideCard(now, now.state != Cards.State.SHOWN);
-                // Every row, not only this one: a toggle can move another card across the limit of 8.
-                updateCardStates(rows);
-                return null;
-            }, null));
-            rows.addView(row);
-        }
-        updateCardStates(rows);
-        // Scroll inside the panel instead of running off the bottom of a 720p screen.
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        int[] at = new int[2];
-        anchor.getLocationInWindow(at);
-        int room = root.getHeight() - (at[1] + anchor.getHeight()) - (int) (34 * density);
-        popup.setHeight(Math.min(panel.getMeasuredHeight(), Math.max(room, (int) (120 * density))));
+        final PopupWindow popup = glassPopup(panel, (int) (220 * density));
+        addLookRow(rows, popup, getString(R.string.live_tv), 0, false,
+                () -> startActivity(new Intent(this, TvActivity.class)));
+        addLookRow(rows, popup, getString(R.string.free_memory), 0, false, this::liberarMemoria);
+        addLookRow(rows, popup, getString(R.string.look), 0, false, this::showLook);
+        addLookRow(rows, popup, getString(R.string.system_settings), 0, false,
+                () -> open(systemIntent(Settings.ACTION_SETTINGS)));
+        fitPopup(panel, popup, (int) (220 * density));
         dropIn(popup, panel, anchor, Gravity.END);
         rows.getChildAt(0).requestFocus();
     }
 
-    private Cards.Card cardFor(String pkg) {
-        for (Cards.Card c : cards) if (c.pkg.equals(pkg)) return c;
-        return null;
+    /** Colour presets and a full-screen picture, in the same row style as the Inputs menu. */
+    private void showLook() {
+        View anchor = findViewById(R.id.btnSettings);
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        final PopupWindow popup = glassPopup(panel, (int) (220 * density));
+        Config cfg = Config.load(this);
+        boolean picture = cfg.wallpaper != null;
+        for (int i = 0; i < LOOK_COLORS.length; i++) {
+            final int color = LOOK_COLORS[i];
+            boolean current = !picture && (cfg.backgroundColor & 0xFFFFFF) == (color & 0xFFFFFF);
+            addLookRow(rows, popup, getString(LOOK_NAMES[i]), color, current, () -> {
+                if (Config.saveBackground(this, color)) recreate();
+                else Toast.makeText(this, R.string.look_failed, Toast.LENGTH_SHORT).show();
+            });
+        }
+        addSeparator(rows);
+        addLookRow(rows, popup, getString(R.string.pick_image), 0, picture, this::pickImage);
+        if (picture) {
+            addLookRow(rows, popup, getString(R.string.clear_image), 0, false, () -> {
+                if (Config.clearWallpaper(this)) recreate();
+                else Toast.makeText(this, R.string.look_failed, Toast.LENGTH_SHORT).show();
+            });
+        }
+        fitPopup(panel, popup, (int) (220 * density));
+        dropIn(popup, panel, anchor, Gravity.END);
+        rows.getChildAt(0).requestFocus();
     }
 
-    /** Writes the state of every row in the Module cards list from the current card list. */
-    private void updateCardStates(LinearLayout rows) {
-        List<Cards.Card> drawn = Cards.shown(cards);
-        for (int i = 0; i < rows.getChildCount(); i++) {
-            View row = rows.getChildAt(i);
-            Cards.Card card = row.getTag() instanceof String ? cardFor((String) row.getTag()) : null;
-            ((TextView) row.findViewById(R.id.state)).setText(card != null ? stateText(card, drawn.contains(card)) : "");
+    private void fitPopup(View panel, PopupWindow popup, int width) {
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max(width, panel.getMeasuredWidth()));
+    }
+
+    private void addLookRow(LinearLayout rows, PopupWindow popup, String title, int swatch,
+                            boolean current, Runnable action) {
+        View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+        ImageView icon = row.findViewById(R.id.icon);
+        if (swatch == 0) {
+            icon.setImageResource(R.drawable.ic_settings);
+        } else {
+            GradientDrawable oval = new GradientDrawable();
+            oval.setShape(GradientDrawable.OVAL);
+            oval.setColor(swatch);
+            if ((swatch & 0xFFFFFF) == 0) oval.setStroke(Math.max(1, (int) density), 0x66FFFFFF);
+            icon.setImageTintList(null);
+            icon.setImageDrawable(oval);
+        }
+        ((TextView) row.findViewById(R.id.title)).setText(title);
+        row.findViewById(R.id.dot).setVisibility(View.GONE);
+        TextView status = row.findViewById(R.id.status);
+        if (current) status.setText(R.string.look_current);
+        else status.setVisibility(View.GONE);
+        row.setOnClickListener(v -> {
+            popup.dismiss();
+            action.run();
+        });
+        rows.addView(row);
+    }
+
+    /** Pictures from DCIM (and its subfolders), newest first, as a grid of thumbnails to pick the wallpaper from. */
+    private void pickImage() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
+            Toast.makeText(this, R.string.wallpaper_permission, Toast.LENGTH_LONG).show();
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (ActivityNotFoundException ignored) {
+            }
+            return;
+        }
+        List<File> pics = new ArrayList<>();
+        collectPictures(new File(android.os.Environment.getExternalStorageDirectory(), "DCIM"), pics, 0);
+        if (pics.isEmpty()) {
+            Toast.makeText(this, R.string.wallpaper_none, Toast.LENGTH_LONG).show();
+            return;
+        }
+        Collections.sort(pics, (x, y) -> Long.compare(y.lastModified(), x.lastModified()));
+        WallpaperPicker.show(this, root, pics, file -> {
+            if (Config.saveWallpaper(this, Uri.fromFile(file))) recreate();
+            else Toast.makeText(this, R.string.look_failed, Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private static void collectPictures(File dir, List<File> out, int depth) {
+        File[] files = dir.listFiles();
+        if (files == null || depth > 3) return;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                if (!f.getName().startsWith(".")) collectPictures(f, out, depth + 1);
+                continue;
+            }
+            String n = f.getName().toLowerCase(Locale.ROOT);
+            if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")) out.add(f);
         }
     }
 
-    /** The row's state: a card the owner set to Shown but which is beyond the eight drawn says so. */
-    private String stateText(Cards.Card card, boolean drawn) {
-        switch (card.state) {
-            case SHOWN:
-                return getString(drawn ? R.string.card_state_shown : R.string.card_state_over_limit);
-            case HIDDEN:
-                return getString(R.string.card_state_hidden);
-            case RESIGNED:
-                return getString(R.string.card_state_new_key);
-            case RELABELLED:
-                return getString(R.string.card_state_new_label);
-            default:
-                return getString(R.string.card_state_new);
-        }
-    }
 }

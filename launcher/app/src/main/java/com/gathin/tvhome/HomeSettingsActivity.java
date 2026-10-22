@@ -2,6 +2,7 @@ package com.gathin.tvhome;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -9,6 +10,11 @@ import android.widget.Toast;
 
 /** Lets the user change HOME through the system UI, without shell or privileged permissions. */
 public class HomeSettingsActivity extends Activity {
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(Config.portuguese(base));
+    }
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);

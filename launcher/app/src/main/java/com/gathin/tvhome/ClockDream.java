@@ -5,6 +5,7 @@ import android.animation.ValueAnimator;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
+import android.content.Context;
 import android.service.dreams.DreamService;
 import android.view.View;
 
@@ -36,6 +37,11 @@ public class ClockDream extends DreamService {
             handler.postDelayed(this, MOVE_MS);
         }
     };
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(Config.portuguese(base));
+    }
 
     @Override
     public void onAttachedToWindow() {

@@ -33,10 +33,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -53,7 +51,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     }
 
     static final class Entry {
-        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2;
+        static final int APP = 0, HOME_SETTINGS = 1;
 
         final int kind;
         final String label;
@@ -133,32 +131,19 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     }
 
     /**
-     * Rebuilds the tiles. A shown module card stands in for every tile of its package (same component,
-     * so focus follows it); hidden_apps wins over a card, and a card's package in dock_apps takes that slot.
+     * Rebuilds the tiles from every Leanback launcher activity, minus this app and hidden_apps.
      */
-    void reload(List<Cards.Card> cards) {
+    void reload() {
         PackageManager pm = ctx.getPackageManager();
         Intent probe = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         List<ResolveInfo> found = pm.queryIntentActivities(probe, 0);
-        Map<String, Cards.Card> cardByPkg = new HashMap<>();
-        for (Cards.Card c : cards) cardByPkg.put(c.pkg, c);
         List<Entry> fresh = new ArrayList<>();
         for (ResolveInfo ri : found) {
             if (ri.activityInfo == null) continue;
             String pkg = ri.activityInfo.packageName;
             if (pkg.equals(ctx.getPackageName()) || hidden.contains(pkg)) continue;
             ComponentName component = new ComponentName(pkg, ri.activityInfo.name);
-            Cards.Card card = cardByPkg.get(pkg);
-            if (card != null && !card.component.equals(component)) continue;   // the card stands in for this tile
-            Drawable banner = loadBanner(pm, ri);
-            Drawable icon = ri.loadIcon(pm);
-            if (card != null) {
-                fresh.add(new Entry(Entry.CARD, card.label, component, banner, icon, card.caption, card.accent));
-            } else {
-                // Same cleaner as the card prompt: an app label with a bidi override or line separator must not
-                // redraw the tile name as something else (#117).
-                fresh.add(new Entry(Cards.cleanLabel(String.valueOf(ri.loadLabel(pm)), pkg), component, banner, icon));
-            }
+            fresh.add(new Entry(cleanLabel(String.valueOf(ri.loadLabel(pm)), pkg), component, loadBanner(pm, ri), ri.loadIcon(pm)));
         }
         Collections.sort(fresh, (a, b) -> {
             int fa = favourites.indexOf(a.pkg), fb = favourites.indexOf(b.pkg);
@@ -167,9 +152,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                 if (fb < 0) return -1;
                 return Integer.compare(fa, fb);
             }
-            // Cards come right after the configured dock apps, before the alphabetical grid.
-            boolean ca = a.kind == Entry.CARD, cb = b.kind == Entry.CARD;
-            if (ca != cb) return ca ? -1 : 1;
             return a.label.compareToIgnoreCase(b.label);
         });
         // Optional "Default home" tile (config.xml), only when this TV actually has a home-screen picker.
@@ -418,5 +400,27 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                 }
             });
         }
+    }
+
+    /** One line, at most 40 characters: an app label with a bidi override or line break must not redraw the tile (#117). */
+    static String cleanLabel(String s, String fallback) {
+        if (s == null) return fallback;
+        StringBuilder b = new StringBuilder();
+        boolean space = true;
+        for (int i = 0; i < s.length() && b.length() < 40; i++) {
+            char c = s.charAt(i);
+            int type = Character.getType(c);
+            if (Character.isWhitespace(c) || Character.isISOControl(c) || type == Character.FORMAT
+                    || type == Character.LINE_SEPARATOR || type == Character.PARAGRAPH_SEPARATOR
+                    || type == Character.SPACE_SEPARATOR) {
+                if (!space) b.append(' ');
+                space = true;
+            } else {
+                b.append(c);
+                space = false;
+            }
+        }
+        String out = b.toString().trim();
+        return out.isEmpty() ? fallback : out;
     }
 }

@@ -1,8 +1,12 @@
 package com.gathin.tvhome;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.net.Uri;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -10,8 +14,10 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -76,6 +82,13 @@ final class Config {
         this.backgroundColor = backgroundColor;
         this.wallpaper = wallpaper;
         this.overlayApplied = overlayApplied;
+    }
+
+    /** This build's menus are Portuguese, whatever language the TV is set to. */
+    static Context portuguese(Context base) {
+        Configuration c = new Configuration(base.getResources().getConfiguration());
+        c.setLocale(Locale.forLanguageTag("pt-BR"));
+        return base.createConfigurationContext(c);
     }
 
     /** The folder the theme tools push into; null when external storage is unavailable. */
@@ -191,5 +204,120 @@ final class Config {
             if (item instanceof String && !((String) item).trim().isEmpty()) out.add(((String) item).trim());
         }
         return out;
+    }
+
+    /** Writes the background colour into the theme overlay, keeping every other key. */
+    static boolean saveBackground(Context ctx, int color) {
+        JSONObject json = overlay(ctx);
+        try {
+            json.put("background_color", String.format(Locale.US, "#%06X", color & 0xFFFFFF));
+        } catch (Exception e) {
+            return false;
+        }
+        return write(ctx, json);
+    }
+
+    /** Copies a picked picture to wallpaper.jpg, downsampled so a 1 GB TV is not handed a 4K bitmap. */
+    static boolean saveWallpaper(Context ctx, Uri uri) {
+        File dir = dir(ctx);
+        if (dir == null || uri == null || !writeJpeg(ctx, uri, new File(dir, WALLPAPER_NAME))) return false;
+        JSONObject json = overlay(ctx);
+        try {
+            json.put("wallpaper", true);
+        } catch (Exception e) {
+            return false;
+        }
+        return write(ctx, json);
+    }
+
+    /** Drops the picture. The background colour underneath shows again. */
+    static boolean clearWallpaper(Context ctx) {
+        File dir = dir(ctx);
+        if (dir != null) new File(dir, WALLPAPER_NAME).delete();
+        JSONObject json = overlay(ctx);
+        try {
+            json.put("wallpaper", false);
+        } catch (Exception e) {
+            return false;
+        }
+        return write(ctx, json);
+    }
+
+    private static JSONObject overlay(Context ctx) {
+        File dir = dir(ctx);
+        JSONObject json = read(dir != null ? new File(dir, FILE_NAME) : null);
+        return json != null ? json : new JSONObject();
+    }
+
+    private static boolean write(Context ctx, JSONObject json) {
+        File dir = dir(ctx);
+        if (dir == null) return false;
+        File dest = new File(dir, FILE_NAME);
+        File tmp = new File(dir, FILE_NAME + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(json.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            tmp.delete();
+            Log.w(TAG, "could not write " + dest + ": " + e.getMessage());
+            return false;
+        }
+        if (dest.exists() && !dest.delete()) {
+            tmp.delete();
+            return false;
+        }
+        return tmp.renameTo(dest);
+    }
+
+    private static boolean writeJpeg(Context ctx, Uri uri, File dest) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream in = ctx.getContentResolver().openInputStream(uri)) {
+            if (in == null) return false;
+            BitmapFactory.decodeStream(in, null, bounds);
+        } catch (Exception e) {
+            return false;
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
+        int sample = 1;
+        while (bounds.outWidth / sample > 1920 || bounds.outHeight / sample > 1080) {
+            if (bounds.outWidth / (sample * 2) < 1 || bounds.outHeight / (sample * 2) < 1) break;
+            sample *= 2;
+        }
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inSampleSize = sample;
+        Bitmap bmp;
+        try (InputStream in = ctx.getContentResolver().openInputStream(uri)) {
+            if (in == null) return false;
+            bmp = BitmapFactory.decodeStream(in, null, opts);
+        } catch (Exception e) {
+            return false;
+        }
+        if (bmp == null) return false;
+        if (bmp.getWidth() > 1920 || bmp.getHeight() > 1080) {
+            float scale = Math.min(1920f / bmp.getWidth(), 1080f / bmp.getHeight());
+            Bitmap scaled = Bitmap.createScaledBitmap(bmp,
+                    Math.max(1, Math.round(bmp.getWidth() * scale)),
+                    Math.max(1, Math.round(bmp.getHeight() * scale)), true);
+            if (scaled != bmp) bmp.recycle();
+            bmp = scaled;
+        }
+        File tmp = new File(dest.getParentFile(), WALLPAPER_NAME + ".tmp");
+        boolean wrote = false;
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            wrote = bmp.compress(Bitmap.CompressFormat.JPEG, 80, out);
+        } catch (Exception e) {
+            wrote = false;
+        } finally {
+            bmp.recycle();
+        }
+        if (!wrote) {
+            tmp.delete();
+            return false;
+        }
+        if (dest.exists() && !dest.delete()) {
+            tmp.delete();
+            return false;
+        }
+        return tmp.renameTo(dest);
     }
 }
