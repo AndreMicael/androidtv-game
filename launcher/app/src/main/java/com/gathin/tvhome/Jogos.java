@@ -340,6 +340,8 @@ final class Jogos {
     }
 
     static final String PPSSPP = "org.ppsspp.ppsspp";
+    /** Um jogo de PSP foi aberto no PPSSPP e a lista de jogos ainda não voltou à frente: o Home volta para ela. */
+    static boolean noPpsspp;
 
     /** Abre o jogo neste APK, pelo núcleo empacotado; PSP vai para o app PPSSPP. */
     static boolean jogar(Context c, Jogo j) {
@@ -352,6 +354,7 @@ final class Jogos {
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
                 c.startActivity(i);
+                noPpsspp = true;
                 return true;
             } catch (Exception e) {
                 return false;

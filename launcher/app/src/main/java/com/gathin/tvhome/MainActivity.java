@@ -344,6 +344,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
             return;
         }
+        // Home no PPSSPP (o Home do controle é o do sistema): volta para a lista de jogos, que está na tarefa dela.
+        if (Jogos.noPpsspp) {
+            Jogos.noPpsspp = false;
+            startActivity(new Intent(this, JogosActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
         grid.scrollToPosition(0);
         lastFocused = 0;
         lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(0) : null;

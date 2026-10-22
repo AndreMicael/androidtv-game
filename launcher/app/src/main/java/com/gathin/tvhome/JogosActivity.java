@@ -56,6 +56,7 @@ public class JogosActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Jogos.noPpsspp = false;
         montar();   // de novo a cada volta: um jogo recém-enviado pelo FTP aparece sem reiniciar
     }
 
