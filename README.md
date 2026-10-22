@@ -2,18 +2,56 @@
 
 Launcher para Android TV com aba de **jogos retrô** embutida (Super Nintendo, fliperama e PlayStation), papel de parede da pasta DCIM e clima na tela inicial. Fork do [CleanYourTV](https://github.com/Gathin23/cleanyourtv) de Gathin (MIT); o README original está em [docs/README-cleanyourtv.md](docs/README-cleanyourtv.md).
 
-## O que tem
+## Funcionalidades
 
-- **Tela inicial** leve, sem anúncios nem recomendações, com clima de Cuiabá (troque em `Clima.java`).
-- **Aba Jogos**: lê qualquer ROM das pastas, com nome, ano e capa vindos de um `jogos.json` opcional. Lê também uma pasta `Jogos/` no pendrive.
-- **Emulador dentro do APK** (LibretroDroid + núcleos snes9x, fbneo e pcsx_rearmed): não precisa do RetroArch.
-  - Controle USB/Bluetooth, até 4 jogadores; o analógico também serve de direcional.
-  - Botão Home do controle: pausa e pergunta se quer salvar e sair. Ao abrir de novo, pergunta se continua de onde parou.
-  - Efeito de TV de tubo (CRT) em 4 níveis, no mesmo menu do Home.
-  - Pede o modo jogo da TV (menos atraso no controle).
-- **Segurar OK num jogo**: mover entre a TV e o pendrive, ou apagar.
-- **Papel de parede**: Ajustes → Aparência → Escolher imagem (fotos da pasta DCIM).
-- **Cadastro.exe** (Windows): cadastra ROM, capa e nome no pendrive e atualiza o `jogos.json`.
+### Tela inicial
+- Relógio, data e saudação com a temperatura de Cuiabá (Open-Meteo, sem chave; troque a cidade em `Clima.java`).
+- Fileira fixa de apps em cima e grade com o resto, com um destaque de vidro que acompanha o foco. OK abre o app; segurar OK abre os detalhes dele no sistema.
+- Barra de cima, em pílulas:
+  - **Jogos**: abre a aba de jogos.
+  - **Entradas**: HDMI, AV e sintonizador da TV (some se a TV não tiver entradas).
+  - **Wi-Fi**: mostra o nome da rede e abre os ajustes de rede.
+  - **Ajustes**: TV ao vivo, Liberar memória, Aparência e Ajustes do sistema.
+- **Aparência**: fundo Preto, Carvão, Marinho, Verde ou Vinho, ou uma foto da pasta DCIM como papel de parede.
+- **Liberar memória**: fecha os apps parados em segundo plano.
+
+### TV ao vivo
+- **Ajustes → TV ao vivo**: 263 canais abertos brasileiros (`assets/canais.json`), separados por categoria.
+- No player: cima/baixo ou Canal+/Canal− trocam de canal, OK mostra o nome, Voltar sai.
+
+### Jogos
+- Uma prateleira por console (Super Nintendo, Fliperama, PlayStation), cada jogo com a cor do console e a capa ao fundo, mais a fileira **Continuar jogando**.
+- Lê qualquer ROM das pastas da TV e de uma pasta `Jogos/` no pendrive; nome, ano, jogadores e capa vêm do `jogos.json` (opcional).
+- Mostra o espaço livre na TV e no pendrive, e o botão **Atualizar** relê as pastas.
+- **Segurar OK num jogo**: mover entre a TV e o pendrive (ROM, faixas do `.cue`, capa e linha do JSON vão juntos; um carregando discreto aparece no canto) ou apagar, com confirmação.
+
+### Emulador (dentro do APK)
+- LibretroDroid com os núcleos snes9x, FBNeo e PCSX ReARMed: não precisa do RetroArch.
+- Controle USB ou Bluetooth, até 4 jogadores (o primeiro controle a apertar um botão é o jogador 1); o analógico esquerdo também serve de direcional. O controle remoto também joga.
+- **Home do controle** (ou do remoto) no meio do jogo: pausa e pergunta Salvar e sair / Sair sem salvar / Efeito TV de tubo / Continuar.
+- **Voltar ou SELECT+START**: menu Continuar / Salvar estado / Carregar estado / Sair.
+- Ao abrir um jogo com estado salvo, pergunta se continua de onde parou. O save da bateria do cartucho é gravado sozinho.
+- **Efeito TV de tubo (CRT)** em 4 níveis (desligado, fraco, médio, forte), lembrado para todos os jogos.
+- Pede o modo jogo da TV (ALLM): menos atraso entre o botão e a tela.
+
+### Protetor de tela
+- Relógio fino sobre um brilho suave (`ClockDream`). Ative em Ajustes do sistema → Protetor de tela, ou:
+  `adb shell settings put secure screensaver_components com.gathin.tvhome/.ClockDream`
+
+### Serviços opcionais (acessibilidade, ativar pelo adb)
+- **InputKeyService**: faz o botão Input do controle remoto abrir o seletor de entradas, que some quando o launcher do Google é desativado.
+- **HomeKeyService**: para controles que mandam `ALL_APPS` no botão Home (sticks Xiaomi).
+- Ativar (exemplo):
+  `adb shell settings put secure enabled_accessibility_services com.gathin.tvhome/.InputKeyService`
+  `adb shell settings put secure accessibility_enabled 1`
+
+### Cadastro.exe (Windows)
+- Programa de 12 KB que fica na raiz do pendrive: escolha console, ROM, capa e nome, e ele copia tudo para `Jogos/` e atualiza o `jogos.json`. Detalhes em [Cadastro.exe](#cadastroexe-windows).
+
+### Também configurado na TV original (fora deste código)
+- **AirPlay** para espelhar iPhone/Mac: [airplay-android-tv](https://github.com/matinzd/airplay-android-tv). Use um nome diferente do nome da TV (ex.: "TV do quarto AirPlay"), senão o Android recusa o anúncio, e deixe o "4K mirroring" desligado se o decodificador H.265 da TV falhar (fica preso em "Conectando").
+- **Enviar arquivos pelo PC**: servidor FTP do app Amaze File Manager (FileZilla com `ftps://<ip-da-tv>`, porta 2211, usuário `anonymous`).
+- Launcher do Google, Play Filmes, recomendações, feedback e agenda desativados (`pm disable-user`, reversível com `pm enable`).
 
 ## Instalar na TV de alguém
 
