@@ -130,6 +130,17 @@ gradlew.bat assembleDebug
 
 O APK sai em `launcher/app/build/outputs/apk/debug/app-debug.apk`. Para atualizar por cima de uma instalação, use a mesma chave (`~/.android/debug.keystore`) de quem instalou.
 
+## Créditos
+
+Este projeto foi feito em cima do trabalho de outras pessoas:
+
+- **[Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv)** (Gathin): o launcher original (antes chamado tv-vibehack), base de todo o código deste repositório. Licença MIT.
+- **[Fardeen26/tv-vibe-kit](https://github.com/Fardeen26/tv-vibe-kit)**: o guia que levou ao launcher acima.
+- **[Swordfish90/LibretroDroid](https://github.com/Swordfish90/LibretroDroid)**: a biblioteca que roda os emuladores dentro do app.
+- **[libretro](https://github.com/libretro)**: os núcleos [snes9x](https://github.com/libretro/snes9x), [FBNeo](https://github.com/libretro/FBNeo) e [PCSX ReARMed](https://github.com/libretro/pcsx_rearmed), e as capas do [libretro-thumbnails](https://github.com/libretro-thumbnails).
+- **[matinzd/airplay-android-tv](https://github.com/matinzd/airplay-android-tv)**: o receptor AirPlay usado na TV (não incluso aqui).
+- Clima: [Open-Meteo](https://open-meteo.com).
+
 ## Licenças
 
 - Launcher: MIT, © Gathin (CleanYourTV) e alterações deste fork.
