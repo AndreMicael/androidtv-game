@@ -27,7 +27,8 @@ final class Jogos {
     static final String JSON = "jogos.json";
 
     enum Sistema {
-        // A cor vem do próprio console: o roxo dos botões do Super Nintendo, o dourado do Neo Geo, o azul do PlayStation.
+        // A cor vem do próprio console: o vermelho do NES, o roxo dos botões do Super Nintendo, o dourado do Neo Geo, o azul do PlayStation.
+        NES("Nintendo", "NES", "libfceumm.so", 0xFFE4342B, new String[]{".nes", ".zip"}),
         SNES("Super Nintendo", "SNES", "libsnes9x.so", 0xFF8E7CF0, new String[]{".sfc", ".smc", ".zip"}),
         FLIPERAMA("Fliperama", "Fliperama", "libfbneo.so", 0xFFF2B531, new String[]{".zip"}),
         PS1("PlayStation", "PS1", "libpcsx_rearmed.so", 0xFF4F86F7, new String[]{".chd", ".pbp", ".cue", ".ccd", ".m3u", ".iso", ".bin", ".img"}),

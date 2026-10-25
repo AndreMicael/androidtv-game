@@ -12,7 +12,7 @@ using System.Windows.Forms;
 
 static class Cadastro
 {
-    static readonly string[] Consoles = { "SNES", "Fliperama", "PS1" };
+    static readonly string[] Consoles = { "NES", "SNES", "Fliperama", "PS1" };
 
     [STAThread]
     static int Main(string[] args)
@@ -155,7 +155,7 @@ static class Cadastro
             };
             f.Controls.Add(b);
         };
-        procurar(rom, "ROMs|*.sfc;*.smc;*.zip;*.chd;*.pbp;*.cue;*.ccd;*.m3u;*.iso;*.bin;*.img|Todos|*.*", rom.Top);
+        procurar(rom, "ROMs|*.nes;*.sfc;*.smc;*.zip;*.chd;*.pbp;*.cue;*.ccd;*.m3u;*.iso;*.bin;*.img|Todos|*.*", rom.Top);
         procurar(capa, "Imagens|*.png;*.jpg;*.jpeg;*.webp", capa.Top);
 
         var ok = new Button { Text = "Cadastrar", Left = 120, Top = y + 4, Width = 140, Height = 34 };
